@@ -1,105 +1,171 @@
-# Create VPC
-# terraform aws create vpc
-resource "aws_vpc" "vpc" {
-  cidr_block           = var.vpc-cidr
-  instance_tenancy     = "default"
-  enable_dns_hostnames = true
-  tags = {
-    Name = "Test_VPC"
+## https://registry.terraform.io/providers/yandex-cloud/yandex/latest/docs/data-sources/datasource_dataproc_cluster
+## https://registry.terraform.io/providers/yandex-cloud/yandex/latest/docs/resources/dataproc_cluster
+
+resource "yandex_dataproc_cluster" "foo" {
+  depends_on = [yandex_resourcemanager_folder_iam_binding.role_agent,yandex_resourcemanager_folder_iam_binding.role_editor]
+
+  bucket      = yandex_storage_bucket.foo.bucket
+  description = "Dataproc Cluster created by Terraform"
+  name        = "dataproc-cluster"
+  labels = {
+    created_by = "terraform"
   }
-}
-# Create Internet Gateway and Attach it to VPC
-# terraform aws create internet gateway
-resource "aws_internet_gateway" "internet-gateway" {
-  vpc_id = aws_vpc.vpc.id
-  tags = {
-    Name = "internet_gateway"
-  }
-}
-# Create Public Subnet 1
-# terraform aws create subnet
-resource "aws_subnet" "public-subnet-1" {
-  vpc_id                  = aws_vpc.vpc.id
-  cidr_block              = var.Public_Subnet_1
-  availability_zone       = "us-east-1a"
-  map_public_ip_on_launch = true
-  tags = {
-    Name = "public-subnet-1"
-  }
-}
-# Create Route Table and Add Public Route
-# terraform aws create route table
-resource "aws_route_table" "public-route-table" {
-  vpc_id = aws_vpc.vpc.id
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.internet-gateway.id
-  }
-  tags = {
-    Name = "Public Route Table"
-  }
-}
-# Associate Public Subnet 1 to "Public Route Table"
-# terraform aws associate subnet with route table
-resource "aws_route_table_association" "public-subnet-1-route-table-association" {
-  subnet_id      = aws_subnet.public-subnet-1.id
-  route_table_id = aws_route_table.public-route-table.id
-}
-# Create Private Subnet 1
-# terraform aws create subnet
-resource "aws_subnet" "private-subnet-1" {
-  vpc_id                  = aws_vpc.vpc.id
-  cidr_block              = var.Private_Subnet_1
-  availability_zone       = "us-east-1a"
-  map_public_ip_on_launch = false
-  tags = {
-    Name = "private-subnet-1"
+  service_account_id = yandex_iam_service_account.dataproc.id
+  zone_id            = "ru-central1-a"
+  ui_proxy = true 
+
+  cluster_config {
+    # Certain cluster version can be set, but better to use default value (last stable version)
+    # version_id = "2.0"
+    # version_id = "2.1.3" # Version '2.1.3' is not available yet
+    version_id = "2.0"
+
+    hadoop {
+      #services = ["HDFS", "YARN", "SPARK", "TEZ", "MAPREDUCE", "HIVE"]
+      services = ["HDFS", "YARN", "SPARK"]
+      properties = {
+        "yarn:yarn.resourcemanager.am.max-attempts" = 5
+      }
+      ssh_public_keys = [
+      file("id_ed25519.pub")]
+    }
+
+    subcluster_spec {
+      name = "main"
+      role = "MASTERNODE"
+      resources {
+        resource_preset_id = "s2.small"
+        disk_type_id       = "network-hdd"
+        disk_size          = 20
+      }
+      subnet_id   = yandex_vpc_subnet.dataproc-control-subnet.id
+      hosts_count = 1
+    }
+
+    subcluster_spec {
+      name = "data"
+      role = "DATANODE"
+      resources {
+        resource_preset_id = "s2.small"
+        disk_type_id       = "network-hdd"
+        disk_size          = 20
+      }
+      subnet_id   = yandex_vpc_subnet.dataproc-control-subnet.id
+      #hosts_count = 2
+      hosts_count = 1
+    }
+
+    subcluster_spec {
+      name = "compute"
+      role = "COMPUTENODE"
+      resources {
+        resource_preset_id = "s2.small"
+        disk_type_id       = "network-hdd"
+        disk_size          = 20
+      }
+      subnet_id   = yandex_vpc_subnet.dataproc-control-subnet.id
+      #hosts_count = 2
+      hosts_count = 1
+    }
+
+    subcluster_spec {
+      name = "compute_autoscaling"
+      role = "COMPUTENODE"
+      resources {
+        resource_preset_id = "s2.small"
+        disk_type_id       = "network-hdd"
+        disk_size          = 20
+      }
+      subnet_id   = yandex_vpc_subnet.dataproc-control-subnet.id
+      #hosts_count = 2      
+      hosts_count = 1
+      autoscaling_config {
+        # max_hosts_count = 10
+        max_hosts_count = 5
+        measurement_duration = 60
+        warmup_duration = 60
+        stabilization_duration = 120
+        preemptible = false
+        decommission_timeout = 60
+      }
+    }
   }
 }
 
-# Create Security Group for the Bastion Host aka Jump Box
-# terraform aws create security group
-resource "aws_security_group" "ssh-security-group" {
-  name        = "SSH Security Group"
-  description = "Enable SSH access on Port 22"
-  vpc_id      = aws_vpc.vpc.id
-  ingress {
-    description = "SSH Access"
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    
-  }
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-  tags = {
-    Name = "SSH Security Group"
+resource "yandex_vpc_network" "dataproc-net" {
+  name = "dataproc-net"
+}
+
+resource "yandex_vpc_gateway" "dataproc-gateway" {
+  name  = "dataproc-gateway"
+}
+
+resource "yandex_vpc_route_table" "dataproc-route-table" {
+  name        = "dataproc-route-table"
+  network_id = yandex_vpc_network.dataproc-net.id
+  static_route { 
+    destination_prefix= "0.0.0.0/0"
+    gateway_id=yandex_vpc_gateway.dataproc-gateway.id
   }
 }
-# Create Security Group for the Web Server
-# terraform aws create security group
-resource "aws_security_group" "webserver-security-group" {
-  name        = "Web Server Security Group"
-  description = "Enable HTTP/HTTPS access on Port 80/443 via ALB and SSH access on Port 22 via SSH SG"
-  vpc_id      = aws_vpc.vpc.id
-  ingress {
-    description     = "SSH Access"
-    from_port       = 22
-    to_port         = 22
-    protocol        = "tcp"
-    security_groups = ["${aws_security_group.ssh-security-group.id}"]
-  }
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-  tags = {
-    Name = "Web Server Security Group"
-  }
+
+
+resource "yandex_vpc_subnet" "dataproc-control-subnet" {
+
+  name             = "dataproc-control-subnet"
+  zone             = "ru-central1-a"
+  network_id       = yandex_vpc_network.dataproc-net.id
+  v4_cidr_blocks   = ["10.1.0.0/24"]
+  route_table_id = yandex_vpc_route_table.dataproc-route-table.id
 }
+
+resource "yandex_iam_service_account" "dataproc" {
+  name        = "dataproc-svc-acc"
+  description = "service account to manage Dataproc Cluster"
+}
+
+data "yandex_resourcemanager_folder" "foo" {
+  //folder_id = "b1goq1sgaqo50ok2drfn"
+  folder_id = var.folder_id
+}
+
+resource "yandex_resourcemanager_folder_iam_binding" "role_agent" {
+  folder_id = data.yandex_resourcemanager_folder.foo.id
+  role      = "dataproc.agent"
+  members = [
+    "serviceAccount:${yandex_iam_service_account.dataproc.id}",
+  ]
+}
+
+resource "yandex_resourcemanager_folder_iam_binding" "role_editor" {
+  folder_id = data.yandex_resourcemanager_folder.foo.id
+  role      = "dataproc.editor"
+  members = [
+    "serviceAccount:${yandex_iam_service_account.dataproc.id}",
+  ]
+}
+
+
+// required in order to create bucket
+resource "yandex_resourcemanager_folder_iam_binding" "bucket-creator" {
+  folder_id = data.yandex_resourcemanager_folder.foo.id
+  role      = "editor"
+  members = [
+    "serviceAccount:${yandex_iam_service_account.dataproc.id}",
+  ]
+}
+
+resource "yandex_iam_service_account_static_access_key" "foo" {
+  service_account_id = yandex_iam_service_account.dataproc.id
+}
+
+resource "yandex_storage_bucket" "foo" {
+  depends_on = [
+    yandex_resourcemanager_folder_iam_binding.bucket-creator
+  ]
+
+  bucket     = "dataproc-shared-bucket"
+  access_key = yandex_iam_service_account_static_access_key.foo.access_key
+  secret_key = yandex_iam_service_account_static_access_key.foo.secret_key
+}
+
