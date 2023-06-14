@@ -4,6 +4,7 @@ Inspired by:
 1) [Applying Graph Theory to Infrastructure as Code](https://www.youtube.com/watch?v=Ce3RNfRbdZ0&ab_channel=HashiCorp) 
 2) [Automated Infrastructure (AWS) Setup Using Terraform and Jenkins (Launch EC2 and VPC)](https://www.cloudbees.com/blog/terraform-and-jenkins-iac-from-your-build) 
 3) [Terraform and Jenkins: IaC from Your Build](https://blogs.perficient.com/2022/06/01/integrating-terraform-with-jenkins-ci-cd/)
+4) [Blast Radius](https://github.com/28mm/blast-radius)
 
 ```bash
 terraform plan
