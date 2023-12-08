@@ -5,7 +5,7 @@ resource "yandex_dataproc_cluster" "foo" {
   depends_on = [yandex_resourcemanager_folder_iam_binding.role_agent,yandex_resourcemanager_folder_iam_binding.role_editor]
 
   bucket      = yandex_storage_bucket.foo.bucket
-  description = "Dataproc Cluster created by Terraform"
+  description = "Dataproc Cluster created by Terraform - JUG.ru demo"
   name        = "dataproc-cluster"
   labels = {
     created_by = "terraform"
@@ -164,7 +164,7 @@ resource "yandex_storage_bucket" "foo" {
     yandex_resourcemanager_folder_iam_binding.bucket-creator
   ]
 
-  bucket     = "dataproc-shared-bucket"
+  bucket     = "jug-ru-dataproc-shared-bucket"
   access_key = yandex_iam_service_account_static_access_key.foo.access_key
   secret_key = yandex_iam_service_account_static_access_key.foo.secret_key
 }
